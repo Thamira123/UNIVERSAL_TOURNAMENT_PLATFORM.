@@ -1,0 +1,121 @@
+﻿import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
+import { inputObject, optionalText, textField } from "../common/input";
+import type { SessionUser } from "../auth/current-user.decorator";
+import { Neo4jService } from "../neo4j/neo4j.service";
+
+@Injectable()
+export class OrganizationsService {
+  constructor(private readonly neo4j: Neo4jService) {}
+
+  async create(value: unknown, user: SessionUser) {
+    const body = inputObject(value);
+    const name = textField(body, "name", 100);
+    const description = optionalText(body, "description", 500);
+    const id = randomUUID();
+    const slug = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}-${id.slice(0, 6)}`;
+    const result = await this.neo4j.run(`
+      MATCH (u:User {id:$userId})
+      CREATE (o:Organization {id:$id, name:$name, slug:$slug, description:$description, createdAt:datetime()})
+      CREATE (u)-[:ORG_MEMBER {role:'OWNER', joinedAt:datetime()}]->(o)
+      RETURN o { .id, .name, .slug, .description, .createdAt } AS organization
+    `, { userId: user.id, id, name, slug, description }, "WRITE");
+    const organization = result.records[0]?.get("organization");
+    if (!organization) throw new NotFoundException("User account was not found.");
+    return organization;
+  }
+
+  async mine(userId: string) {
+    const result = await this.neo4j.run(`
+      MATCH (u:User {id:$userId})-[membership:ORG_MEMBER]->(o:Organization)
+      RETURN o { .id, .name, .slug, .description, .createdAt } AS organization, membership.role AS role
+      ORDER BY o.name
+    `, { userId });
+    return result.records.map((record) => ({ ...record.get("organization"), role: record.get("role") }));
+  }
+
+  async getOne(id: string, userId: string) {
+    const result = await this.neo4j.run(`
+      MATCH (o:Organization {id:$id})
+      CALL {
+        WITH o OPTIONAL MATCH (member:User)-[membership:ORG_MEMBER]->(o)
+        RETURN collect(CASE WHEN member IS NULL THEN null ELSE {id:member.id, name:member.name, email:member.email, role:membership.role} END) AS members
+      }
+      CALL {
+        WITH o OPTIONAL MATCH (o)-[:ORGANIZES]->(t:Tournament)
+        RETURN collect(CASE WHEN t IS NULL THEN null ELSE {id:t.id, name:t.name, status:t.status, startDate:t.startDate} END) AS tournaments
+      }
+      RETURN o { .id, .name, .slug, .description, .createdAt } AS organization, members, tournaments
+    `, { id });
+    const record = result.records[0];
+    if (!record) throw new NotFoundException("Organization not found.");
+    const membership = await this.neo4j.run("MATCH (u:User {id:$userId})-[r:ORG_MEMBER]->(o:Organization {id:$id}) RETURN r.role AS role", { userId, id });
+    if (!membership.records.length) throw new ForbiddenException("You need to belong to this organization to view its workspace.");
+    return { organization: record.get("organization"), role: membership.records[0].get("role"), admins: (record.get("members") as { role: string }[]).filter((member) => ["OWNER", "ADMIN"].includes(member.role)), tournaments: record.get("tournaments") };
+  }
+
+  async addAdmin(id: string, value: unknown, userId: string) {
+    const body = inputObject(value);
+    const email = textField(body, "email", 254).toLowerCase();
+    const result = await this.neo4j.run(`
+      MATCH (actor:User {id:$userId})-[actorRole:ORG_MEMBER]->(o:Organization {id:$id})
+      WHERE actorRole.role IN ['OWNER','ADMIN']
+      MATCH (member:User {email:$email})
+      MERGE (member)-[membership:ORG_MEMBER]->(o)
+      ON CREATE SET membership.role='ADMIN', membership.joinedAt=datetime()
+      ON MATCH SET membership.role=CASE WHEN membership.role='OWNER' THEN 'OWNER' ELSE 'ADMIN' END
+      RETURN member { .id, .name, .email } AS user
+    `, { userId, id, email }, "WRITE");
+    const added = result.records[0]?.get("user");
+    if (!added) throw new NotFoundException("Organization or account not found, or you do not have admin permission.");
+    return added;
+  }
+
+  async tournaments(id: string, userId: string) {
+    await this.requireOrganizationMember(userId, id);
+    const result = await this.neo4j.run(`
+      MATCH (o:Organization {id:$id})-[:ORGANIZES]->(t:Tournament)
+      OPTIONAL MATCH (t)-[:HAS_EVENT]->(e:Event)
+      RETURN t { .id, .name, .description, .sport, .status, .startDate, .createdAt } AS tournament, count(e) AS eventCount
+      ORDER BY t.createdAt DESC
+    `, { id });
+    return result.records.map((record) => ({ ...record.get("tournament"), eventCount: record.get("eventCount").toNumber() }));
+  }
+
+  async createTournament(organizationId: string, value: unknown, userId: string) {
+    const body = inputObject(value);
+    const name = textField(body, "name", 120);
+    const description = optionalText(body, "description", 1000);
+    const startDate = textField(body, "startDate", 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(Date.parse(`${startDate}T00:00:00Z`))) throw new BadRequestException("startDate must use YYYY-MM-DD format.");
+    const id = randomUUID();
+    const result = await this.neo4j.run(`
+      MATCH (actor:User {id:$userId})-[role:ORG_MEMBER]->(o:Organization {id:$organizationId})
+      WHERE role.role IN ['OWNER','ADMIN']
+      CREATE (t:Tournament {id:$id, name:$name, description:$description, status:'UPCOMING', startDate:$startDate, createdAt:datetime()})
+      CREATE (o)-[:ORGANIZES]->(t)
+      CREATE (actor)-[:TOURNAMENT_ADMIN {role:'OWNER', assignedAt:datetime()}]->(t)
+      RETURN t { .id, .name, .description, .status, .startDate, .createdAt } AS tournament
+    `, { userId, organizationId, id, name, description, startDate }, "WRITE");
+    const tournament = result.records[0]?.get("tournament");
+    if (!tournament) throw new ForbiddenException("Only an organization admin can create its tournaments.");
+    return tournament;
+  }
+
+  async requireOrganizationAdmin(userId: string, organizationId: string) {
+    const result = await this.neo4j.run("MATCH (u:User {id:$userId})-[r:ORG_MEMBER]->(o:Organization {id:$organizationId}) WHERE r.role IN ['OWNER','ADMIN'] RETURN o.id AS id", { userId, organizationId });
+    if (!result.records.length) throw new ForbiddenException("Organization admin permission is required.");
+  }
+
+  private async isOrganizationMember(userId: string, organizationId: string) {
+    const result = await this.neo4j.run("MATCH (u:User {id:$userId})-[:ORG_MEMBER]->(o:Organization {id:$organizationId}) RETURN count(o) > 0 AS member", { userId, organizationId });
+    return result.records[0]?.get("member") === true;
+  }
+
+  private async requireOrganizationMember(userId: string, organizationId: string) {
+    if (!(await this.isOrganizationMember(userId, organizationId))) throw new ForbiddenException("Organization membership is required.");
+  }
+}
+
+
+
