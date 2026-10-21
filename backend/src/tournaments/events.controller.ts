@@ -22,4 +22,9 @@ export class SportsController {
   getSport(@Param("sportKey") sportKey: string) {
     return this.events.listForSport(sportKey.toLowerCase());
   }
+
+  @Get(":sportKey/tournaments")
+  getTournaments(@Param("sportKey") sportKey: string) {
+    return this.events.listTournamentsForSport(sportKey.toLowerCase());
+  }
 }

@@ -22,10 +22,10 @@ The profile shows organizations you administer. Organization pages show organiza
 
 ## Start locally
 
-Requirements: Node.js 24 (or a compatible version), npm, and Docker Desktop.
+Requirements: Node.js 24 (or a compatible version), npm, and a local Neo4j instance (Neo4j Desktop or Docker).
 
-1. Copy `.env.example` to `.env` and set a private Neo4j password plus a unique `JWT_SECRET` with at least 32 characters.
-2. Start Neo4j: `docker compose up -d neo4j`.
+1. Copy `.env.example` to `.env`. Set `NEO4J_PASSWORD` to the password for your Neo4j instance and set a unique `JWT_SECRET` with at least 32 characters. The defaults target the Neo4j Desktop instance at `neo4j://127.0.0.1:7687`, using its `ums` database.
+2. Start the `UMS` local instance in Neo4j Desktop, or run `docker compose up -d neo4j` and change `NEO4J_DATABASE` to `neo4j` for the Docker default.
 3. Install dependencies from the repository root: `npm install`.
 4. Start the API in one terminal: `npm run dev:backend`.
 5. Start the web app in another terminal: `npm run dev:frontend`.
@@ -42,7 +42,7 @@ All endpoints below are prefixed with `/api`. Signup and login are public; the r
 | Account | `POST /auth/signup`, `POST /auth/login`, `GET /auth/me` |
 | Organization | `POST /organizations`, `GET /organizations/mine`, `GET /organizations/:id`, `POST /organizations/:id/admins` |
 | Tournament | `POST /organizations/:id/tournaments`, `GET /tournaments/:id`, `POST /tournaments/:id/admins` |
-| Sports pages | `GET /sports/:sportKey` (public Cricket or High Jump competition feed) |
+| Sports pages | `GET /sports/:sportKey` (public event feed), `GET /sports/:sportKey/tournaments` (public sport-filtered tournament feed) |
 | Event | `POST /tournaments/:id/events`, `GET /events/:id`, `PATCH /events/:id` |
 | Stages and rounds | `POST /events/:id/stages`, `POST /stages/:id/rounds` |
 | Health | `GET /health`, `GET /health/neo4j` |

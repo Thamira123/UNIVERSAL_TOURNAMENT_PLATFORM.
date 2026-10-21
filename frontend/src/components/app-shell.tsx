@@ -20,8 +20,9 @@ export function AppShell({ children, title, subtitle }: { children: React.ReactN
           <span className="brand-mark">U</span><span>UTMS<span className="brand-period">.</span><small>TOURNAMENT MANAGEMENT</small></span>
         </Link>
         <nav aria-label="Workspace navigation">
+          <Link aria-current={pathname === "/sports" || pathname.startsWith("/sports/") ? "page" : undefined} href="/sports">Sports</Link>
           <Link aria-current={pathname === "/profile" ? "page" : undefined} href="/profile">My profile</Link>
-          <Link aria-current={pathname === "/organizations/new" ? "page" : undefined} href="/organizations/new">New organization</Link>
+          <Link className="workspace-nav-secondary" aria-current={pathname === "/organizations/new" ? "page" : undefined} href="/organizations/new">New organization</Link>
           <button onClick={signOut} type="button">Sign out <span aria-hidden="true">↗</span></button>
         </nav>
       </header>

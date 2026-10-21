@@ -54,11 +54,14 @@ export class AuthService {
       MATCH (u:User {id:$userId})
       OPTIONAL MATCH (u)-[membership:ORG_MEMBER]->(o:Organization)
       WITH u, collect(CASE WHEN o IS NULL THEN null ELSE {id:o.id, name:o.name, role:membership.role} END) AS organizations
-      RETURN u { .id, .name, .email, .createdAt } AS user, organizations
+      OPTIONAL MATCH (u)-[tournamentRole:TOURNAMENT_ADMIN]->(t:Tournament)
+      OPTIONAL MATCH (org:Organization)-[:ORGANIZES]->(t)
+      WITH u, organizations, collect(CASE WHEN t IS NULL THEN null ELSE {id:t.id, name:t.name, role:tournamentRole.role, organization:org.name} END) AS tournaments
+      RETURN u { .id, .name, .email, .createdAt } AS user, organizations, tournaments
     `, { userId });
     const record = result.records[0];
     if (!record) throw new UnauthorizedException("Account no longer exists.");
-    return { user: record.get("user"), organizations: record.get("organizations") };
+    return { user: record.get("user"), organizations: record.get("organizations"), tournaments: record.get("tournaments") };
   }
 
   async verifyAccessToken(token: string): Promise<SessionUser> {

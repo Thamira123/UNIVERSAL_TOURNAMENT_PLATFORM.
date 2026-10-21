@@ -79,6 +79,7 @@ export class Neo4jService implements OnApplicationShutdown, OnModuleInit {
     return error instanceof Error ? error : new Error("Neo4j request failed.");
   }
 
-  verifyConnectivity() { return this.driver.verifyConnectivity(); }
+  get databaseName() { return this.database; }
+  verifyConnectivity() { return this.driver.verifyConnectivity({ database: this.database }); }
   async onApplicationShutdown() { await this.driver.close(); }
 }

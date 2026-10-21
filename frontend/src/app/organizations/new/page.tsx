@@ -8,10 +8,11 @@ import { api, getAccessToken, jsonBody } from "@/lib/api";
 
 export default function NewOrganizationPage() {
   const router = useRouter(); const [ready, setReady] = useState(false); const [error, setError] = useState(""); const [saving, setSaving] = useState(false);
-  useEffect(() => { if (!getAccessToken()) router.replace("/login"); else setReady(true); }, [router]);
+  const [sport, setSport] = useState("");
+  useEffect(() => { const requestedSport = new URLSearchParams(window.location.search).get("sport"); const selected = requestedSport === "cricket" || requestedSport === "high-jump" ? requestedSport : ""; if (selected) setSport(selected); if (!getAccessToken()) router.replace(selected ? `/login?createSport=${selected}` : "/login"); else setReady(true); }, [router]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setSaving(true); const values = new FormData(event.currentTarget);
-    try { const organization = await api<{ id: string }>("/organizations", { method: "POST", body: jsonBody({ name: values.get("name"), description: values.get("description") }) }); router.push(`/organizations/${organization.id}`); }
+    try { const organization = await api<{ id: string }>("/organizations", { method: "POST", body: jsonBody({ name: values.get("name"), description: values.get("description") }) }); router.push(sport ? `/organizations/${organization.id}/tournaments/new?sport=${sport}` : `/organizations/${organization.id}`); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not create organization."); }
     finally { setSaving(false); }
   }

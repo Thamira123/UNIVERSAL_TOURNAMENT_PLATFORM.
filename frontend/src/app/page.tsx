@@ -3,6 +3,8 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { sports as sportCatalog } from "@/lib/sports";
+import { getAccessToken } from "@/lib/api";
 
 const banners = [
   { key: "stadium", label: "Tournament night", image: "/images/utms-hero.webp" },
@@ -10,10 +12,7 @@ const banners = [
   { key: "high-jump", label: "High Jump event", image: "/images/high-jump-card.webp" },
 ];
 
-const sports = [
-  { href: "/sports/cricket", key: "01", name: "Cricket", category: "team", kind: "TEAM SPORT", detail: "Group stages, round robin, knockout and finals.", image: "/images/cricket-card.webp" },
-  { href: "/sports/high-jump", key: "02", name: "High Jump", category: "individual", kind: "INDIVIDUAL EVENT", detail: "Qualifying rounds and finals, built around the event.", image: "/images/high-jump-card.webp" },
-];
+const sports = sportCatalog.map((sport, index) => ({ href: sport.route, key: String(index + 1).padStart(2, "0"), name: sport.name, category: sport.type, kind: sport.category, detail: sport.description, image: sport.image }));
 
 const currentSteps = [
   { index: "01", title: "Organization", detail: "Create your organization and manage its admins.", tag: "AVAILABLE NOW" },
@@ -30,17 +29,33 @@ const nextModules = [
   { index: "05", title: "Performance history", detail: "Past results and team trends" },
 ];
 
+const sportsNews = [
+  { number: "01", sport: "CRICKET · ASIAN GAMES", date: "03 OCT 2026", title: "India take men’s cricket gold", detail: "India beat Pakistan in the final to claim the men’s cricket gold medal at the 2026 Asian Games.", source: "ICC", href: "https://www.icc-cricket.com/news/india-defeat-pakistan-to-clinch-asian-games-gold", mark: "GOLD" },
+  { number: "02", sport: "CRICKET · WORLD CUP 2027", date: "01 OCT 2026", title: "World Cup schedule revealed", detail: "The 2027 tournament will bring 14 teams and 57 matches to South Africa, Zimbabwe and Namibia.", source: "ICC", href: "https://www.icc-cricket.com/news/fixture-schedule-announced-for-icc-men-s-cricket-world-cup-2027", mark: "’27" },
+  { number: "03", sport: "CRICKET · TEST SERIES", date: "13 OCT 2026", title: "Australia win in Durban", detail: "Josh Hazlewood led Australia to a 214-run victory over South Africa in the first Test.", source: "Al Jazeera", href: "https://www.aljazeera.com/sports/2026/10/13/australia-bowl-out-south-africa-to-win-first-test-in-durban", mark: "214" },
+  { number: "04", sport: "RUGBY LEAGUE · WORLD CUP", date: "15 OCT 2026", title: "A thrilling World Cup opener", detail: "Jack Bostock’s debut hat-trick helped Australia edge New Zealand 24–22 in front of a record crowd.", source: "NRL", href: "https://www.nrl.com/news/2026/10/15/jumping-jacks-flash-bostock-bags-three-on-debut-as-roos-salute/", mark: "24–22" },
+];
+
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isSignedIn, setIsSignedIn] = useState(false);
   const [activeBanner, setActiveBanner] = useState(0);
   const [activeSportCategory, setActiveSportCategory] = useState<"all" | "team" | "individual">("all");
   const visibleSports = activeSportCategory === "all" ? sports : sports.filter((sport) => sport.category === activeSportCategory);
 
   useEffect(() => {
+    const syncAuthentication = () => setIsSignedIn(Boolean(getAccessToken()));
+    syncAuthentication();
+    window.addEventListener("storage", syncAuthentication);
+    window.addEventListener("utms:auth-change", syncAuthentication);
     const timer = window.setInterval(() => {
       setActiveBanner((current) => (current + 1) % banners.length);
     }, 10000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("storage", syncAuthentication);
+      window.removeEventListener("utms:auth-change", syncAuthentication);
+    };
   }, []);
 
   return (
@@ -49,33 +64,31 @@ export default function Home() {
       <header className="site-header">
         <Link className="brand utms-brand" href="/" aria-label="UTMS home"><span className="brand-mark">U</span><span>UTMS<span className="brand-period">.</span></span></Link>
         <nav className="main-nav" aria-label="Main navigation">
-          <a href="#sports">Sports</a><a href="#workflow">How it works</a><a href="#roadmap">2026 roadmap</a>
+          <Link href="/sports">Sports</Link><a href="#sports-news">News</a><a href="#workflow">How it works</a><a href="#roadmap">2026 roadmap</a>
         </nav>
-        <div className="header-actions"><Link className="sign-in" href="/login">Sign in</Link><Link className="utms-header-cta" href="/signup">Get started <span aria-hidden="true">↗</span></Link><button className="menu-button" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)} type="button">{menuOpen ? "×" : "☰"}</button></div>
+        <div className="header-actions">{isSignedIn ? <Link className="utms-header-cta" href="/profile">My workspace <span aria-hidden="true">↗</span></Link> : <><Link className="sign-in" href="/login">Sign in</Link><Link className="utms-header-cta" href="/signup">Get started <span aria-hidden="true">↗</span></Link></>}<button className="menu-button" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)} type="button">{menuOpen ? "×" : "☰"}</button></div>
       </header>
-      {menuOpen && <nav className="mobile-menu" aria-label="Mobile navigation"><a onClick={() => setMenuOpen(false)} href="#sports">Sports</a><a onClick={() => setMenuOpen(false)} href="#workflow">How it works</a><a onClick={() => setMenuOpen(false)} href="#roadmap">2026 roadmap</a><Link onClick={() => setMenuOpen(false)} href="/login">Sign in</Link><Link onClick={() => setMenuOpen(false)} href="/signup">Get started</Link></nav>}
+      {menuOpen && <nav className="mobile-menu" aria-label="Mobile navigation"><Link onClick={() => setMenuOpen(false)} href="/sports">Sports</Link><a onClick={() => setMenuOpen(false)} href="#sports-news">News</a><a onClick={() => setMenuOpen(false)} href="#workflow">How it works</a><a onClick={() => setMenuOpen(false)} href="#roadmap">2026 roadmap</a>{isSignedIn ? <Link onClick={() => setMenuOpen(false)} href="/profile">My workspace</Link> : <><Link onClick={() => setMenuOpen(false)} href="/login">Sign in</Link><Link onClick={() => setMenuOpen(false)} href="/signup">Get started</Link></>}</nav>}
 
       <section className="hero utms-hero" id="top" aria-label="Universal Tournament sports platform">
         <div className="hero-image" aria-hidden="true">{banners.map((banner, index) => <Image className={`hero-banner-image hero-banner-image-${banner.key}${index === activeBanner ? " hero-banner-image-active" : ""}`} src={banner.image} alt="" fill sizes="100vw" priority={index === 0} key={banner.key} />)}</div>
         <div className="hero-content">
           <div className="hero-kicker"><span className="live-pulse" /> UNIVERSAL TOURNAMENT · 2026 <span className="kicker-line" /></div>
-          <h1>Manage every<br />tournament.<br /><em>Elevate every<br />game.</em></h1>
-          <p>One organized workspace for tournaments, sports, events and competition stages. Start with Cricket or High Jump and build from there.</p>
-          <div className="hero-links"><Link className="button-light" href="/signup">Create a tournament <span className="arrow">→</span></Link><a className="text-link" href="#sports">Explore launch sports <span className="arrow">↘</span></a></div>
+          <h1>YOUR SPORT.<br /><em>YOUR STAGE.</em></h1>
+          <p>Bring your tournaments, events and competition stages together in one place. Start with Cricket or High Jump and make every game count.</p>
+          <div className="hero-links"><Link className="button-light" href={isSignedIn ? "/profile" : "/signup"}>{isSignedIn ? "Open workspace" : "Start organizing"} <span className="arrow">→</span></Link><a className="text-link" href="#sports">Explore sports <span className="arrow">↘</span></a></div>
           <div className="utms-hero-proof"><span>01 <b>ORGANIZATION</b></span><i /><span>02 <b>TOURNAMENT</b></span><i /><span>03 <b>EVENTS & STAGES</b></span></div>
-        </div>
-        <div className="utms-product-visual" aria-label="Tournament stage overview illustration">
-          <div className="utms-visual-top"><span><i /> WORKSPACE PREVIEW · SAMPLE DATA</span><small>2026</small></div>
-          <div className="utms-visual-title">Inter-Club Games <span>EXAMPLE</span></div>
-          <div className="utms-visual-meta">ORGANIZATION <b>Northshore Sports Club</b></div>
-          <div className="utms-visual-flow"><div><small>EVENT 01</small><strong>Cricket</strong><span>Team sport</span></div><i>→</i><div><small>STAGE 01</small><strong>Group stage</strong><span>4 groups · 4 per group</span></div><i>→</i><div><small>STAGE 02</small><strong>Final</strong><span>Top teams advance</span></div></div>
-          <div className="utms-visual-bottom"><span><b>01</b> Organization</span><span><b>02</b> Tournament</span><span><b>03</b> Events</span></div>
         </div>
         <div className="utms-banner-controls" role="group" aria-label="Featured banner controls"><button type="button" onClick={() => setActiveBanner((activeBanner + banners.length - 1) % banners.length)} aria-label="Previous banner">←</button><span aria-live="polite">0{activeBanner + 1} <i>/</i> 0{banners.length}</span>{banners.map((banner, index) => <button className={`utms-banner-dot${index === activeBanner ? " utms-banner-dot-active" : ""}`} type="button" key={banner.key} onClick={() => setActiveBanner(index)} aria-label={`Show ${banner.label} banner`} aria-pressed={index === activeBanner} />)}<button type="button" onClick={() => setActiveBanner((activeBanner + 1) % banners.length)} aria-label="Next banner">→</button></div>
         <div className="hero-caption"><span>UTMS / 2026</span><i /> ORGANIZE · COMPETE · GROW</div>
       </section>
 
       <section className="stat-strip utms-stats" aria-label="Platform overview"><div><strong>02</strong><span>SUPPORTED SPORTS</span></div><div><strong>04</strong><span>CORE WORKSPACE STEPS</span></div><div><strong>01</strong><span>ACCOUNT FOR YOUR WORK</span></div><div className="stat-note">BUILT AROUND<br />YOUR TOURNAMENT <span>↘</span></div></section>
+
+      <section className="section utms-news-section" id="sports-news">
+        <div className="section-heading utms-news-heading"><div><p className="eyebrow">SPORTS DESK · OCTOBER 2026</p><h2>Good things <em>happening.</em></h2><p>Recent moments and milestones from the world of sport.</p></div><span className="utms-news-count">04 <small>STORIES</small></span></div>
+        <div className="utms-news-grid">{sportsNews.map((item) => <a className="utms-news-card" href={item.href} key={item.number} target="_blank" rel="noreferrer"><div className="utms-news-card-top"><span>{item.sport}</span><i>{item.number}</i></div><div className="utms-news-art" aria-hidden="true"><span>{item.mark}</span><b>UTMS / SPORT</b></div><div className="utms-news-copy"><time>{item.date}</time><h3>{item.title}</h3><p>{item.detail}</p><span className="utms-news-source">Read at {item.source} <b>↗</b></span></div></a>)}</div>
+      </section>
 
       <section className="section sports-section utms-sports" id="sports">
         <div className="section-heading"><div><p className="eyebrow">SPORTS DIRECTORY · 2026</p><h2>Find your <em>field.</em></h2><p className="utms-sports-intro">Browse the supported sports by competition category. Each sport opens its own events, formats and tournament details.</p></div><span className="utms-sport-count">02 <small>SPORTS AVAILABLE</small></span></div>

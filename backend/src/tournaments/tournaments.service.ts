@@ -19,7 +19,7 @@ export class TournamentsService {
         RETURN collect(CASE WHEN event IS NULL THEN null ELSE {id:event.id, name:event.name, sport:event.sportKey, category:event.category, status:event.status} END) AS events
       }
       OPTIONAL MATCH (organization:Organization)-[:ORGANIZES]->(t)
-      RETURN t { .id, .name, .description, .status, .startDate, .createdAt } AS tournament,
+      RETURN t { .id, .name, .description, .sportKey, .format, .teamCount, .endDate, .venue, .category, .gender, .ageGroup, .status, .startDate, .createdAt } AS tournament,
         organization { .id, .name } AS organization, admins, events,
         (EXISTS { MATCH (:User {id:$userId})-[:TOURNAMENT_ADMIN]->(t) }
           OR EXISTS { MATCH (:User {id:$userId})-[membership:ORG_MEMBER]->(organization) WHERE membership.role IN ['OWNER','ADMIN'] }) AS canManage,

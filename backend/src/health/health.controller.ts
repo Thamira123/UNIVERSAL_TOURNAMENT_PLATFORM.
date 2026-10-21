@@ -14,9 +14,9 @@ export class HealthController {
   async getNeo4jHealth() {
     try {
       await this.neo4j.verifyConnectivity();
-      return { status: "ok", database: "neo4j" };
+      return { status: "ok", database: this.neo4j.databaseName };
     } catch {
-      throw new ServiceUnavailableException({ status: "error", database: "neo4j" });
+      throw new ServiceUnavailableException({ status: "error", database: this.neo4j.databaseName });
     }
   }
 }

@@ -6,7 +6,12 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
   app.enableShutdownHooks();
-  app.enableCors({ origin: config.get<string>("FRONTEND_URL", "http://localhost:3000") });
+  const frontendOrigins = new Set([
+    config.get<string>("FRONTEND_URL", "http://localhost:3000"),
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+  ]);
+  app.enableCors({ origin: [...frontendOrigins] });
   app.setGlobalPrefix("api");
   const port = config.get<number>("PORT", 4000);
   await app.listen(port);

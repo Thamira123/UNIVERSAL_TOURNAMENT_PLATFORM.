@@ -43,7 +43,7 @@ export class OrganizationsService {
       }
       CALL {
         WITH o OPTIONAL MATCH (o)-[:ORGANIZES]->(t:Tournament)
-        RETURN collect(CASE WHEN t IS NULL THEN null ELSE {id:t.id, name:t.name, status:t.status, startDate:t.startDate} END) AS tournaments
+        RETURN collect(CASE WHEN t IS NULL THEN null ELSE {id:t.id, name:t.name, status:t.status, startDate:t.startDate, sportKey:t.sportKey} END) AS tournaments
       }
       RETURN o { .id, .name, .slug, .description, .createdAt } AS organization, members, tournaments
     `, { id });
@@ -76,7 +76,7 @@ export class OrganizationsService {
     const result = await this.neo4j.run(`
       MATCH (o:Organization {id:$id})-[:ORGANIZES]->(t:Tournament)
       OPTIONAL MATCH (t)-[:HAS_EVENT]->(e:Event)
-      RETURN t { .id, .name, .description, .sport, .status, .startDate, .createdAt } AS tournament, count(e) AS eventCount
+      RETURN t { .id, .name, .description, .sportKey, .status, .startDate, .createdAt } AS tournament, count(e) AS eventCount
       ORDER BY t.createdAt DESC
     `, { id });
     return result.records.map((record) => ({ ...record.get("tournament"), eventCount: record.get("eventCount").toNumber() }));
@@ -86,17 +86,29 @@ export class OrganizationsService {
     const body = inputObject(value);
     const name = textField(body, "name", 120);
     const description = optionalText(body, "description", 1000);
+    const sportKey = optionalText(body, "sportKey", 30).toLowerCase();
+    if (sportKey && !["cricket", "high-jump"].includes(sportKey)) throw new BadRequestException("Choose Cricket or High Jump.");
     const startDate = textField(body, "startDate", 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || Number.isNaN(Date.parse(`${startDate}T00:00:00Z`))) throw new BadRequestException("startDate must use YYYY-MM-DD format.");
+    const endDate = optionalText(body, "endDate", 10);
+    if (endDate && (!/^\d{4}-\d{2}-\d{2}$/.test(endDate) || Number.isNaN(Date.parse(`${endDate}T00:00:00Z`)))) throw new BadRequestException("endDate must use YYYY-MM-DD format.");
+    if (endDate && endDate < startDate) throw new BadRequestException("endDate must be on or after startDate.");
+    const format = optionalText(body, "format", 40);
+    const venue = optionalText(body, "venue", 160);
+    const category = optionalText(body, "category", 80);
+    const gender = optionalText(body, "gender", 40);
+    const ageGroup = optionalText(body, "ageGroup", 40);
+    const teamCount = body.teamCount === undefined || body.teamCount === null || body.teamCount === "" ? null : Number(body.teamCount);
+    if (teamCount !== null && (!Number.isInteger(teamCount) || teamCount < 2 || teamCount > 1000)) throw new BadRequestException("teamCount must be a whole number between 2 and 1000.");
     const id = randomUUID();
     const result = await this.neo4j.run(`
       MATCH (actor:User {id:$userId})-[role:ORG_MEMBER]->(o:Organization {id:$organizationId})
       WHERE role.role IN ['OWNER','ADMIN']
-      CREATE (t:Tournament {id:$id, name:$name, description:$description, status:'UPCOMING', startDate:$startDate, createdAt:datetime()})
+      CREATE (t:Tournament {id:$id, name:$name, description:$description, sportKey:$sportKey, format:$format, teamCount:$teamCount, endDate:$endDate, venue:$venue, category:$category, gender:$gender, ageGroup:$ageGroup, status:'UPCOMING', startDate:$startDate, createdAt:datetime()})
       CREATE (o)-[:ORGANIZES]->(t)
       CREATE (actor)-[:TOURNAMENT_ADMIN {role:'OWNER', assignedAt:datetime()}]->(t)
-      RETURN t { .id, .name, .description, .status, .startDate, .createdAt } AS tournament
-    `, { userId, organizationId, id, name, description, startDate }, "WRITE");
+      RETURN t { .id, .name, .description, .sportKey, .format, .teamCount, .endDate, .venue, .category, .gender, .ageGroup, .status, .startDate, .createdAt } AS tournament
+    `, { userId, organizationId, id, name, description, sportKey: sportKey || null, format: format || null, teamCount, endDate: endDate || null, venue: venue || null, category: category || null, gender: gender || null, ageGroup: ageGroup || null, startDate }, "WRITE");
     const tournament = result.records[0]?.get("tournament");
     if (!tournament) throw new ForbiddenException("Only an organization admin can create its tournaments.");
     return tournament;

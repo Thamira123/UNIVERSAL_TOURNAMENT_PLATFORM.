@@ -6,10 +6,12 @@ export function getAccessToken() {
 
 export function saveAccessToken(token: string) {
   window.localStorage.setItem("arena_access_token", token);
+  window.dispatchEvent(new Event("utms:auth-change"));
 }
 
 export function clearAccessToken() {
   window.localStorage.removeItem("arena_access_token");
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("utms:auth-change"));
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -36,4 +38,18 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export function jsonBody(value: unknown) {
   return JSON.stringify(value);
+}
+
+export async function getDashboardPath(createSport = "") {
+  if (createSport === "cricket" || createSport === "high-jump") return `/profile?createSport=${createSport}`;
+  try {
+    const access = await api<{ organizations: { id: string; role: string }[]; tournaments?: { id: string }[] }>("/auth/me");
+    const manageable = access.organizations.filter((organization) => ["OWNER", "ADMIN"].includes(organization.role.toUpperCase()));
+    if (manageable.length === 1) return `/organizations/${manageable[0].id}`;
+    if (manageable.length > 1) return "/profile";
+    if (access.tournaments?.length === 1) return `/tournaments/${access.tournaments[0].id}`;
+  } catch {
+    // The profile page handles expired sessions and displays API errors.
+  }
+  return "/profile";
 }

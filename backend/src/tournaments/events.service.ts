@@ -14,6 +14,7 @@ export class EventsService {
     if (!sports.has(sportKey)) throw new NotFoundException("Sport not found.");
     const result = await this.neo4j.run(`
       MATCH (sport:Sport {key:$sportKey})<-[:USES_SPORT]-(event:Event)<-[:HAS_EVENT]-(tournament:Tournament)
+      WHERE tournament.sportKey IS NULL OR tournament.sportKey = $sportKey
       OPTIONAL MATCH (event)-[stageLink:HAS_STAGE]->(stage:Stage)
       WITH sport, event, tournament, stage, stageLink ORDER BY stageLink.order
       WITH sport, event, tournament,
@@ -26,6 +27,32 @@ export class EventsService {
     return { sport: record?.get("sport") ?? { key: sportKey, name: sportKey === "cricket" ? "Cricket" : "High Jump" }, events: record?.get("entries") ?? [] };
   }
 
+  async listTournamentsForSport(sportKey: string) {
+    if (!sports.has(sportKey)) throw new NotFoundException("Sport not found.");
+    const result = await this.neo4j.run(`
+      MATCH (tournament:Tournament)
+      WHERE tournament.sportKey = $sportKey OR (
+        tournament.sportKey IS NULL
+        AND EXISTS { MATCH (tournament)-[:HAS_EVENT]->(:Event {sportKey:$sportKey}) }
+        AND NOT EXISTS { MATCH (tournament)-[:HAS_EVENT]->(other:Event) WHERE other.sportKey <> $sportKey }
+      )
+      OPTIONAL MATCH (organization:Organization)-[:ORGANIZES]->(tournament)
+      CALL {
+        WITH tournament
+        OPTIONAL MATCH (tournament)-[:HAS_EVENT]->(event:Event)
+        RETURN count(event) AS eventCount
+      }
+      RETURN tournament { .id, .name, .description, .status, .startDate, .sportKey, .format, .teamCount, .endDate, .venue, .category, .gender, .ageGroup } AS tournament,
+        organization { .id, .name } AS organization, eventCount
+      ORDER BY tournament.startDate ASC, tournament.createdAt DESC
+    `, { sportKey });
+    return result.records.map((record) => ({
+      ...record.get("tournament"),
+      organization: record.get("organization"),
+      eventCount: record.get("eventCount").toNumber(),
+    }));
+  }
+
   async create(tournamentId: string, value: unknown, userId: string) {
     const body = inputObject(value);
     const name = textField(body, "name", 120);
@@ -36,15 +63,17 @@ export class EventsService {
     const id = randomUUID();
     const result = await this.neo4j.run(`
       MATCH (actor:User {id:$userId}), (t:Tournament {id:$tournamentId}), (sport:Sport {key:$sportKey})
-      WHERE EXISTS { MATCH (actor)-[:TOURNAMENT_ADMIN]->(t) }
-        OR EXISTS { MATCH (org:Organization)-[:ORGANIZES]->(t), (actor)-[membership:ORG_MEMBER]->(org) WHERE membership.role IN ['OWNER','ADMIN'] }
+      WHERE (t.sportKey IS NULL OR t.sportKey = $sportKey)
+        AND (EXISTS { MATCH (actor)-[:TOURNAMENT_ADMIN]->(t) }
+          OR EXISTS { MATCH (org:Organization)-[:ORGANIZES]->(t), (actor)-[membership:ORG_MEMBER]->(org) WHERE membership.role IN ['OWNER','ADMIN'] })
+      SET t.sportKey = coalesce(t.sportKey, $sportKey)
       CREATE (event:Event {id:$id, name:$name, sportKey:$sportKey, category:$category, description:$description, status:'DRAFT', createdAt:datetime()})
       CREATE (t)-[:HAS_EVENT]->(event)
       CREATE (event)-[:USES_SPORT]->(sport)
       RETURN event { .id, .name, .sportKey, .category, .description, .status } AS event
     `, { userId, tournamentId, sportKey, id, name, category, description }, "WRITE");
     const event = result.records[0]?.get("event");
-    if (!event) throw new ForbiddenException("Tournament admin permission is required to add an event.");
+    if (!event) throw new ForbiddenException("Tournament admin permission is required, and the event must match the tournament sport.");
     return event;
   }
 
